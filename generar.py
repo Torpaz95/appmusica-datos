@@ -175,7 +175,7 @@ def detalles(ids):
     # Número de Wikipedias con artículo (las webs *.wikipedia.org/ entre sus enlaces).
     # De paso se guarda el título del artículo en español e inglés: es el nombre con el que se
     # conoce al artista (por ejemplo, «Miley Cyrus», aunque en Wikidata figure como «Miley»).
-    for x in sparql(f"""SELECT ?i ?w ?t WHERE {{ VALUES ?i {{ {vals} }}
+    for x in sparql(f"""SELECT ?i ?w ?t WHERE {{ VALUES ?i {{ {vals} }} hint:Query hint:optimizer "None".
         ?a schema:about ?i; schema:isPartOf ?w; schema:name ?t }}"""):
         w = x["w"]["value"]
         if w.endswith(".wikipedia.org/"):
@@ -191,7 +191,7 @@ def detalles(ids):
         return d
     vals = " ".join("wd:" + i for i in vivos)
 
-    for x in sparql(f"""SELECT ?i ?l ?k WHERE {{ VALUES ?i {{ {vals} }}
+    for x in sparql(f"""SELECT ?i ?l ?k WHERE {{ VALUES ?i {{ {vals} }} hint:Query hint:optimizer "None".
         {{ ?i rdfs:label ?l BIND("n" AS ?k) }} UNION {{ ?i skos:altLabel ?l BIND("a" AS ?k) }}
         UNION {{ ?i schema:description ?l BIND("d" AS ?k) }}
         FILTER(LANG(?l) IN ("es", "en", "mul")) }}"""):
@@ -204,14 +204,14 @@ def detalles(ids):
         elif lengua in ("es", "en"):
             e["desc"][lengua] = texto
 
-    for x in sparql(f"""SELECT ?i ?t WHERE {{ VALUES ?i {{ {vals} }} ?i wdt:P31 ?t }}"""):
+    for x in sparql(f"""SELECT ?i ?t WHERE {{ VALUES ?i {{ {vals} }} hint:Query hint:optimizer "None". ?i wdt:P31 ?t }}"""):
         d[qid(x["i"]["value"])]["tipos"].add(qid(x["t"]["value"]))
 
     # Profesiones y sexo (para el papel: «Cantante» / «Cantante», «Compositor» / «Compositora»).
-    for x in sparql(f"""SELECT ?i ?o WHERE {{ VALUES ?i {{ {vals} }} ?i wdt:P106|wdt:P21 ?o }}"""):
+    for x in sparql(f"""SELECT ?i ?o WHERE {{ VALUES ?i {{ {vals} }} hint:Query hint:optimizer "None". ?i wdt:P106|wdt:P21 ?o }}"""):
         d[qid(x["i"]["value"])]["ocup"].add(qid(x["o"]["value"]))
 
-    for x in sparql(f"""SELECT ?i (MIN(YEAR(?f)) AS ?a) WHERE {{ VALUES ?i {{ {vals} }}
+    for x in sparql(f"""SELECT ?i (MIN(YEAR(?f)) AS ?a) WHERE {{ VALUES ?i {{ {vals} }} hint:Query hint:optimizer "None".
         ?i wdt:P569|wdt:P571|wdt:P2031 ?f }} GROUP BY ?i"""):
         if "a" in x:
             d[qid(x["i"]["value"])]["anio"] = int(x["a"]["value"])
@@ -219,14 +219,14 @@ def detalles(ids):
     # País: de origen (grupos) o nacionalidad (personas). «wdt:» da solo los valores principales
     # (si en Wikidata hay uno marcado como preferido, solo ese).
     paises = {i: set() for i in vivos}
-    for x in sparql(f"""SELECT ?i ?c WHERE {{ VALUES ?i {{ {vals} }}
+    for x in sparql(f"""SELECT ?i ?c WHERE {{ VALUES ?i {{ {vals} }} hint:Query hint:optimizer "None".
         ?i wdt:P495|wdt:P27 ?pa. ?pa wdt:P297 ?c }}"""):
         paises[qid(x["i"]["value"])].add(x["c"]["value"])
     # País actual del lugar de nacimiento (personas) o de formación (grupos). Sirve para elegir
     # entre varias nacionalidades y, si la nacionalidad es un estado histórico sin código
     # actual (Beethoven: Electorado de Colonia), para dar el país de hoy (Alemania).
     nacio = {}
-    for x in sparql(f"""SELECT ?i ?c WHERE {{ VALUES ?i {{ {vals} }}
+    for x in sparql(f"""SELECT ?i ?c WHERE {{ VALUES ?i {{ {vals} }} hint:Query hint:optimizer "None".
         ?i wdt:P19|wdt:P740 ?lugar. ?lugar wdt:P17 ?pa. ?pa wdt:P297 ?c }}"""):
         nacio.setdefault(qid(x["i"]["value"]), set()).add(x["c"]["value"])
     for i, opciones in paises.items():
