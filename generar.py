@@ -40,22 +40,44 @@ MUSICO = "Q639669"   # músico
 GRUPO = "Q215380"    # grupo musical
 HUMANO = "Q5"
 
-# Palabras que, en la descripción (español o inglés), indican que la persona se dedica a la
-# música. Se comparan sin tildes y en minúsculas, al principio de una palabra.
+# Profesiones que, en la descripción (español o inglés), indican dedicación a la música. Se
+# comparan sin tildes y en minúsculas, al principio de una palabra («compos» vale para
+# «compositor», «composer», «compositora»...). Las de varias palabras van unidas con «_».
 PALABRAS_MUSICA = """
 music musico musica cantant cantaor cantaora cantautor singer songwriter vocalist
-compos rapper rapero rapera trapero trapera mc dj disc jockey
-guitar bass bajista drummer bateria percusion pianist piano organist organista
-violin viol cellist chelista violonchel saxofon saxophon trumpet trompet trombon
-clarinet flaut flute oboe fagot bassoon harp arpista accordion acordeon banjo mandolin
-ukulele sitar tabla keyboard teclista conductor director de orquesta orchestra orquesta
-producer productor beatmaker opera tenor soprano baritone baritono mezzo contralto
-countertenor contratenor bass-baritone jazz rock pop punk metal hip hop reggae reggaeton
-folk blues soul funk gospel country flamenco salsa bachata tango fado k-pop j-pop
-idol band banda grupo duo trio cuarteto quartet choir coro chorister corista
-lyricist letrista arranger arreglista instrumentalist instrumentista multi-instrumentalist
-multiinstrumentista bandleader frontman frontwoman troubadour trovador bard chansonnier
-yodel beatbox turntablist electronic electronica edm techno house trance
+compos rapper rapero rapera trapero trapera mc dj disc_jockey deejay
+guitar bajista bassist drummer baterista percusionista percussionist pianist organist
+organista violin viola cellist chelista violonchel saxofon saxophon trumpet trompet
+trombon clarinet flaut flute oboe fagot bassoon harpist arpista accordion acordeon
+banjo mandolin ukulele sitar keyboardist teclista conductor director_de_orquesta
+director_musical musical_director bandleader director_de_banda productor_musical
+music_producer record_producer beatmaker opera tenor soprano baritone baritono
+mezzosoprano mezzo-soprano contralto countertenor contratenor bass-baritone
+jazz rock pop punk metal hip_hop reggae reggaeton folk blues soul funk gospel country
+flamenco salsa bachata tango fado k-pop j-pop idol band banda grupo_musical
+duo_musical trio choir coro chorister corista lyricist letrista arranger arreglista
+instrumentalist instrumentista multi-instrumentalist multiinstrumentista frontman
+frontwoman troubadour trovador chansonnier yodel beatbox turntablist
+""".split()
+
+# Profesiones no musicales. Si una de ellas aparece en la descripción ANTES que cualquier
+# profesión musical («actriz, cantante y modelo»), se entiende que la persona no se dedica
+# principalmente a la música (D14: «Cantante…» sí, «Actriz…» no).
+PALABRAS_OTRAS = """
+actor actriz actress modelo model presentador presentadora presenter host tv_host
+television_personality personalidad_de_television youtuber influencer streamer tiktoker
+comedian comediante humorista escritor escritora writer novelist novelista poet poeta
+poetisa playwright dramaturgo dramaturga painter pintor pintora sculptor escultor
+escultora photographer fotografo fotografa politician politico politica journalist
+periodista film_director director_de_cine filmmaker cineasta screenwriter guionista
+dancer bailarin bailarina choreographer coreografo coreografa athlete atleta
+footballer futbolista wrestler luchador boxer boxeador businessman empresario
+empresaria entrepreneur emprendedor socialite philosopher filosofo filosofa scientist
+cientifico cientifica physician medico medica lawyer abogado abogada priest sacerdote
+monk monje theologian teologo nun monja king rey queen reina prince principe
+princess princesa emperor emperador soldier soldado military militar architect
+arquitecto arquitecta voice_actor voice_actress actor_de_voz actriz_de_voz
+pornographic_actress actriz_pornografica
 """.split()
 
 
@@ -64,12 +86,26 @@ def sin_tildes(s):
     return "".join(c for c in s if not unicodedata.combining(c))
 
 
-_RE_MUSICA = re.compile(r"(?<![a-z0-9])(" + "|".join(
-    re.escape(p) for p in sorted(set(PALABRAS_MUSICA), key=len, reverse=True)) + ")")
+def _regex(lista):
+    trozos = sorted({re.escape(p).replace("_", r"\s+") for p in lista}, key=len, reverse=True)
+    return re.compile(r"(?<![a-z0-9])(" + "|".join(trozos) + ")")
+
+
+_RE_MUSICA = _regex(PALABRAS_MUSICA)
+_RE_OTRAS = _regex(PALABRAS_OTRAS)
 
 
 def descripcion_musical(desc):
-    return bool(desc) and bool(_RE_MUSICA.search(sin_tildes(desc)))
+    """True si la descripción presenta a la persona, en primer lugar, como dedicada a la
+    música: aparece una profesión musical y ninguna otra profesión va antes que ella."""
+    if not desc:
+        return False
+    d = sin_tildes(desc)
+    m = _RE_MUSICA.search(d)
+    if not m:
+        return False
+    o = _RE_OTRAS.search(d)
+    return o is None or m.start() < o.start()
 
 
 # ---------------------------------------------------------------- consultas a Wikidata
@@ -231,12 +267,21 @@ CASOS = [
 
 
 def casos_de_prueba(artistas):
+    """Comprueba los ejemplos de D14. Un artista cuenta como encontrado si su nombre o alguno
+    de sus alias coincide exactamente (sin tildes ni mayúsculas) con el esperado."""
+    def es(a, nombre):
+        n = sin_tildes(nombre)
+        return any(sin_tildes(x) == n for x in [a["nombre"]] + a["alias"])
     filas = []
     for texto, si, no, top in CASOS:
-        res = buscar(texto, artistas, n=min(top, 10**6))
-        nombres = [sin_tildes(a["nombre"]) for a in res]
-        fallos = [f"falta «{s}»" for s in si if sin_tildes(s) not in nombres[:top]]
-        fallos += [f"aparece «{x}»" for x in no if any(sin_tildes(x) in n for n in nombres)]
+        res = buscar(texto, artistas, n=top if top < 10**6 else len(artistas))
+        fallos = []
+        for s in si:
+            pos = next((k for k, a in enumerate(buscar(texto, artistas, n=len(artistas)), 1)
+                        if es(a, s)), None)
+            if pos is None or pos > top:
+                fallos.append(f"«{s}» " + ("no aparece" if pos is None else f"sale en el puesto {pos}"))
+        fallos += [f"aparece «{x}»" for x in no if any(es(a, x) for a in res)]
         primeros = ", ".join(a["nombre"] for a in res[:5])
         filas.append((texto, not fallos, "; ".join(fallos), primeros))
     return filas
