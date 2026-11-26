@@ -225,12 +225,17 @@ def detalles(ids):
         FILTER NOT EXISTS {{ ?st pq:P582 ?fin }} FILTER(?r != wikibase:DeprecatedRank) }}"""):
         c, pref = x["c"]["value"], x["r"]["value"].endswith("PreferredRank")
         paises[qid(x["i"]["value"])][c] = paises[qid(x["i"]["value"])].get(c, False) or pref
+    # País actual del lugar de nacimiento (personas) o de formación (grupos). Sirve para elegir
+    # entre varias nacionalidades y, si la nacionalidad es un estado histórico sin código
+    # actual (Beethoven: Electorado de Colonia), para dar el país de hoy (Alemania).
     nacio = {}
     for x in sparql(f"""SELECT ?i ?c WHERE {{ VALUES ?i {{ {vals} }}
-        ?i wdt:P19 ?lugar. ?lugar wdt:P17 ?pa. ?pa wdt:P297 ?c }}"""):
+        ?i wdt:P19|wdt:P740 ?lugar. ?lugar wdt:P17 ?pa. ?pa wdt:P297 ?c }}"""):
         nacio.setdefault(qid(x["i"]["value"]), set()).add(x["c"]["value"])
     for i, opciones in paises.items():
         if not opciones:
+            if len(nacio.get(i, ())) == 1:
+                d[i]["pais"] = next(iter(nacio[i]))
             continue
         en_nacimiento = sorted(c for c in opciones if c in nacio.get(i, ()))
         preferidas = sorted(c for c, pref in opciones.items() if pref)
