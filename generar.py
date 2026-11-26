@@ -233,12 +233,18 @@ def coincidencia(consulta, nombres):
     return mejor
 
 
+# Orden (D14, regla 3, revisada el 26/11/2026): empezar por lo escrito da ventaja (la fama
+# cuenta el triple), pero un artista mucho más famoso puede adelantar a uno poco conocido.
+VENTAJA_EMPIEZA = 3
+
+
 def buscar(consulta, artistas, n=10):
     res = []
     for a in artistas:
         c = coincidencia(consulta, [a["nombre"]] + a["alias"])
         if c is not None:
-            res.append((c, -a["fama"], a["nombre"], a))
+            puntos = a["fama"] * (VENTAJA_EMPIEZA if c == 0 else 1)
+            res.append((-puntos, c, a["nombre"], a))
     res.sort(key=lambda r: r[:3])
     return [r[3] for r in res[:n]]
 
