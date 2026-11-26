@@ -17,6 +17,7 @@ Uso:  python generar.py            (lista completa)
       python generar.py --prueba   (solo unas pocas profesiones, para probar)
 """
 import gzip
+import http.client
 import json
 import os
 import re
@@ -133,7 +134,7 @@ def sparql(q, intentos=6):
                 espera *= 2
                 continue
             raise
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        except (urllib.error.URLError, OSError, http.client.HTTPException, json.JSONDecodeError):
             if i < intentos - 1:
                 time.sleep(espera)
                 espera *= 2
