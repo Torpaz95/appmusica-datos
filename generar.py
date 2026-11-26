@@ -118,7 +118,7 @@ def descripcion_musical(desc):
 
 # ---------------------------------------------------------------- consultas a Wikidata
 
-def sparql(q, intentos=6):
+def sparql(q, intentos=4):
     datos = urllib.parse.urlencode({"query": q}).encode()
     espera = 5
     for i in range(intentos):
@@ -216,15 +216,12 @@ def detalles(ids):
         if "a" in x:
             d[qid(x["i"]["value"])]["anio"] = int(x["a"]["value"])
 
-    # País: de origen (grupos) o nacionalidad (personas), sin las que tienen fecha de fin. Si una
-    # persona tiene varias nacionalidades, se elige la del país donde nació; si no, la marcada
-    # como preferida en Wikidata.
-    paises = {i: {} for i in vivos}
-    for x in sparql(f"""SELECT ?i ?c ?r WHERE {{ VALUES ?i {{ {vals} }}
-        ?i p:P495|p:P27 ?st. ?st ps:P495|ps:P27 ?pa; wikibase:rank ?r. ?pa wdt:P297 ?c.
-        FILTER NOT EXISTS {{ ?st pq:P582 ?fin }} FILTER(?r != wikibase:DeprecatedRank) }}"""):
-        c, pref = x["c"]["value"], x["r"]["value"].endswith("PreferredRank")
-        paises[qid(x["i"]["value"])][c] = paises[qid(x["i"]["value"])].get(c, False) or pref
+    # País: de origen (grupos) o nacionalidad (personas). «wdt:» da solo los valores principales
+    # (si en Wikidata hay uno marcado como preferido, solo ese).
+    paises = {i: set() for i in vivos}
+    for x in sparql(f"""SELECT ?i ?c WHERE {{ VALUES ?i {{ {vals} }}
+        ?i wdt:P495|wdt:P27 ?pa. ?pa wdt:P297 ?c }}"""):
+        paises[qid(x["i"]["value"])].add(x["c"]["value"])
     # País actual del lugar de nacimiento (personas) o de formación (grupos). Sirve para elegir
     # entre varias nacionalidades y, si la nacionalidad es un estado histórico sin código
     # actual (Beethoven: Electorado de Colonia), para dar el país de hoy (Alemania).
@@ -238,9 +235,24 @@ def detalles(ids):
                 d[i]["pais"] = next(iter(nacio[i]))
             continue
         en_nacimiento = sorted(c for c in opciones if c in nacio.get(i, ()))
-        preferidas = sorted(c for c, pref in opciones.items() if pref)
-        d[i]["pais"] = (en_nacimiento or preferidas or sorted(opciones))[0]
+        d[i]["pais"] = (en_nacimiento or sorted(opciones))[0]
     return d
+
+
+FALLIDOS = []
+
+
+def detalles_seguro(ids):
+    """Como detalles(), pero si Wikidata no responde para un lote, lo parte en dos y lo vuelve a
+    intentar. Si aun así falla un artista suelto, se omite esta semana y se anota en el informe."""
+    try:
+        return detalles(ids)
+    except Exception as e:
+        if len(ids) == 1:
+            FALLIDOS.append((ids[0], str(e)[:80]))
+            return {}
+        mitad = len(ids) // 2
+        return {**detalles_seguro(ids[:mitad]), **detalles_seguro(ids[mitad:])}
 
 
 # ---------------------------------------------------------------- búsqueda (réplica de D14)
@@ -364,7 +376,7 @@ def main():
     info = {}
     lotes = [ids[i:i + LOTE] for i in range(0, len(ids), LOTE)]
     with ThreadPoolExecutor(max_workers=3) as ex:
-        for n, parte in enumerate(ex.map(detalles, lotes), 1):
+        for n, parte in enumerate(ex.map(detalles_seguro, lotes), 1):
             info.update(parte)
             if n % 25 == 0 or n == len(lotes):
                 print(f"  detalles: lote {n}/{len(lotes)} ({(time.time() - t0) / 60:.0f} min)", flush=True)
@@ -372,7 +384,10 @@ def main():
     motivos = Counter()
     artistas = []
     for i in ids:
-        e = info[i]
+        e = info.get(i)
+        if e is None:
+            motivos["Wikidata no respondió (se reintentará la próxima semana)"] += 1
+            continue
         if e["wp"] == 0:
             motivos["sin artículo en Wikipedia"] += 1
             continue
