@@ -168,14 +168,22 @@ def candidatos(propiedad, valor, extra=""):
 def detalles(ids):
     vals = " ".join("wd:" + i for i in ids)
     d = {i: dict(nombres={}, alias=set(), desc={}, wp=0, tipos=set(), anio=None, pais=None,
-                 ocup=set())
+                 ocup=set(), titulos={})
          for i in ids}
 
     # Número de Wikipedias con artículo (las webs *.wikipedia.org/ entre sus enlaces).
-    for x in sparql(f"""SELECT ?i ?w WHERE {{ VALUES ?i {{ {vals} }}
-        ?a schema:about ?i; schema:isPartOf ?w }}"""):
-        if x["w"]["value"].endswith(".wikipedia.org/"):
-            d[qid(x["i"]["value"])]["wp"] += 1
+    # De paso se guarda el título del artículo en español e inglés: es el nombre con el que se
+    # conoce al artista (por ejemplo, «Miley Cyrus», aunque en Wikidata figure como «Miley»).
+    for x in sparql(f"""SELECT ?i ?w ?t WHERE {{ VALUES ?i {{ {vals} }}
+        ?a schema:about ?i; schema:isPartOf ?w; schema:name ?t }}"""):
+        w = x["w"]["value"]
+        if w.endswith(".wikipedia.org/"):
+            e = d[qid(x["i"]["value"])]
+            e["wp"] += 1
+            if w in ("https://es.wikipedia.org/", "https://en.wikipedia.org/"):
+                titulo = re.sub(r"\s*\([^)]*\)\s*$", "", x["t"]["value"]).strip()
+                if titulo:
+                    e["titulos"][w[8:10]] = titulo
 
     vivos = [i for i in ids if d[i]["wp"] > 0]
     if not vivos:
@@ -362,7 +370,8 @@ def main():
         if e["wp"] == 0:
             motivos["sin artículo en Wikipedia"] += 1
             continue
-        nombre = e["nombres"].get("es") or e["nombres"].get("en") or e["nombres"].get("mul")
+        nombre = (e["titulos"].get("es") or e["nombres"].get("es") or e["titulos"].get("en")
+                  or e["nombres"].get("en") or e["nombres"].get("mul"))
         if not nombre:
             motivos["sin nombre en español, inglés ni multilingüe"] += 1
             continue
@@ -382,7 +391,8 @@ def main():
                 continue
             tipo = "g"
             papel = next((r for r in PAPELES_GRUPO if r in e["tipos"]), "")
-        alias = sorted({a for a in set(e["nombres"].values()) | e["alias"] if a != nombre})
+        alias = sorted({a for a in set(e["nombres"].values()) | set(e["titulos"].values()) | e["alias"]
+                        if a != nombre})
         artistas.append(dict(id=i, tipo=tipo, fama=e["wp"], nombre=nombre, alias=alias,
                              anio=e["anio"], pais=e["pais"], papel=papel))
 
