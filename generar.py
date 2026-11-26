@@ -34,7 +34,14 @@ UA = "AppMusica-datos/0.1 (https://github.com/Torpaz95/appmusica-datos)"
 ENDPOINT = "https://query.wikidata.org/sparql"
 SALIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "datos")
 LOTE = 400  # artistas por consulta de detalles
-CABECERA = ["id", "tipo", "fama", "nombre", "alias", "anio", "pais"]
+CABECERA = ["id", "tipo", "fama", "nombre", "alias", "anio", "pais", "papel"]
+
+# Papel principal que muestra la app («Cantante», «Guitarrista»...), por orden de prioridad.
+# Debe coincidir con PERSON_ROLES y GROUP_ROLES de la app (WikidataRepository.kt).
+PAPELES_PERSONA = ["Q177220", "Q488205", "Q2252262", "Q130857", "Q158852", "Q36834", "Q486748",
+                   "Q855091", "Q584301", "Q386854", "Q183945", "Q753110", "Q806349", "Q639669"]
+PAPELES_GRUPO = ["Q9212979"]
+MUJER = {"Q6581072", "Q1052281"}
 
 MUSICO = "Q639669"   # músico
 GRUPO = "Q215380"    # grupo musical
@@ -160,7 +167,8 @@ def candidatos(propiedad, valor, extra=""):
 
 def detalles(ids):
     vals = " ".join("wd:" + i for i in ids)
-    d = {i: dict(nombres={}, alias=set(), desc={}, wp=0, tipos=set(), anio=None, pais=None)
+    d = {i: dict(nombres={}, alias=set(), desc={}, wp=0, tipos=set(), anio=None, pais=None,
+                 ocup=set())
          for i in ids}
 
     # Número de Wikipedias con artículo (las webs *.wikipedia.org/ entre sus enlaces).
@@ -190,15 +198,34 @@ def detalles(ids):
     for x in sparql(f"""SELECT ?i ?t WHERE {{ VALUES ?i {{ {vals} }} ?i wdt:P31 ?t }}"""):
         d[qid(x["i"]["value"])]["tipos"].add(qid(x["t"]["value"]))
 
+    # Profesiones y sexo (para el papel: «Cantante» / «Cantante», «Compositor» / «Compositora»).
+    for x in sparql(f"""SELECT ?i ?o WHERE {{ VALUES ?i {{ {vals} }} ?i wdt:P106|wdt:P21 ?o }}"""):
+        d[qid(x["i"]["value"])]["ocup"].add(qid(x["o"]["value"]))
+
     for x in sparql(f"""SELECT ?i (MIN(YEAR(?f)) AS ?a) WHERE {{ VALUES ?i {{ {vals} }}
         ?i wdt:P569|wdt:P571|wdt:P2031 ?f }} GROUP BY ?i"""):
         if "a" in x:
             d[qid(x["i"]["value"])]["anio"] = int(x["a"]["value"])
 
-    for x in sparql(f"""SELECT ?i (SAMPLE(?c) AS ?p) WHERE {{ VALUES ?i {{ {vals} }}
-        ?i wdt:P495|wdt:P27 ?pa. ?pa wdt:P297 ?c }} GROUP BY ?i"""):
-        if "p" in x:
-            d[qid(x["i"]["value"])]["pais"] = x["p"]["value"]
+    # País: de origen (grupos) o nacionalidad (personas), sin las que tienen fecha de fin. Si una
+    # persona tiene varias nacionalidades, se elige la del país donde nació; si no, la marcada
+    # como preferida en Wikidata.
+    paises = {i: {} for i in vivos}
+    for x in sparql(f"""SELECT ?i ?c ?r WHERE {{ VALUES ?i {{ {vals} }}
+        ?i p:P495|p:P27 ?st. ?st ps:P495|ps:P27 ?pa; wikibase:rank ?r. ?pa wdt:P297 ?c.
+        FILTER NOT EXISTS {{ ?st pq:P582 ?fin }} FILTER(?r != wikibase:DeprecatedRank) }}"""):
+        c, pref = x["c"]["value"], x["r"]["value"].endswith("PreferredRank")
+        paises[qid(x["i"]["value"])][c] = paises[qid(x["i"]["value"])].get(c, False) or pref
+    nacio = {}
+    for x in sparql(f"""SELECT ?i ?c WHERE {{ VALUES ?i {{ {vals} }}
+        ?i wdt:P19 ?lugar. ?lugar wdt:P17 ?pa. ?pa wdt:P297 ?c }}"""):
+        nacio.setdefault(qid(x["i"]["value"]), set()).add(x["c"]["value"])
+    for i, opciones in paises.items():
+        if not opciones:
+            continue
+        en_nacimiento = sorted(c for c in opciones if c in nacio.get(i, ()))
+        preferidas = sorted(c for c, pref in opciones.items() if pref)
+        d[i]["pais"] = (en_nacimiento or preferidas or sorted(opciones))[0]
     return d
 
 
@@ -209,7 +236,7 @@ ARTICULOS = {"the", "a", "an", "el", "la", "los", "las", "le", "les", "l", "il",
 
 
 def palabras(texto):
-    return [w for w in re.split(r"[^a-z0-9]+", sin_tildes(texto)) if w]
+    return [w for w in re.split(r"[\W_]+", sin_tildes(texto)) if w]
 
 
 def coincidencia(consulta, nombres):
@@ -347,15 +374,17 @@ def main():
             if not (descripcion_musical(e["desc"].get("es")) or descripcion_musical(e["desc"].get("en"))):
                 motivos["persona sin descripción" if not desc else "descripción no musical"] += 1
                 continue
-            tipo = "p"
+            tipo = "f" if e["ocup"] & MUJER else "p"
+            papel = next((r for r in PAPELES_PERSONA if r in e["ocup"]), "")
         else:
             if not (e["tipos"] & grupo_set):
                 motivos["ya no figura como grupo musical"] += 1
                 continue
             tipo = "g"
+            papel = next((r for r in PAPELES_GRUPO if r in e["tipos"]), "")
         alias = sorted({a for a in set(e["nombres"].values()) | e["alias"] if a != nombre})
         artistas.append(dict(id=i, tipo=tipo, fama=e["wp"], nombre=nombre, alias=alias,
-                             anio=e["anio"], pais=e["pais"]))
+                             anio=e["anio"], pais=e["pais"], papel=papel))
 
     artistas.sort(key=lambda a: (-a["fama"], a["nombre"]))
     ruta = os.path.join(SALIDA, "artistas.tsv.gz")
@@ -365,10 +394,10 @@ def main():
         for a in artistas:
             f.write("\t".join([a["id"], a["tipo"], str(a["fama"]), limpio(a["nombre"]),
                                "|".join(limpio(x) for x in a["alias"]),
-                               str(a["anio"] or ""), a["pais"] or ""]) + "\n")
+                               str(a["anio"] or ""), a["pais"] or "", a["papel"]]) + "\n")
     tam = os.path.getsize(ruta)
 
-    n_p = sum(a["tipo"] == "p" for a in artistas)
+    n_p = sum(a["tipo"] != "g" for a in artistas)
     n_g = len(artistas) - n_p
     fecha = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
     json.dump(dict(fecha=fecha, artistas=len(artistas), personas=n_p, grupos=n_g,

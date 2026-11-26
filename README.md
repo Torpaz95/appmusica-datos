@@ -8,6 +8,6 @@ Lista de artistas musicales para la app **App Música**, preparada automáticame
 ## Contenido
 
 - `generar.py`: el programa que consulta Wikidata y aplica las reglas de búsqueda de la app.
-- `datos/artistas.tsv.gz`: la lista (columnas: `id`, `tipo` p=persona / g=grupo, `fama` = número de Wikipedias con artículo, `nombre`, `alias` separados por `|`, `anio`, `pais` en código ISO).
+- `datos/artistas.tsv.gz`: la lista (columnas: `id`, `tipo` p=persona, f=persona (mujer), g=grupo, `fama` = número de Wikipedias con artículo, `nombre`, `alias` separados por `|`, `anio`, `pais` en código ISO, `papel` = profesión o tipo de grupo principal en Wikidata).
 - `datos/informe.md`: informe de calidad de la última actualización.
 - `.github/workflows/actualizar.yml`: tarea automática que regenera la lista cada lunes.
