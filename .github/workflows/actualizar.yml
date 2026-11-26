@@ -1,0 +1,42 @@
+name: Actualizar lista de artistas
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"   # cada lunes a las 03:17 UTC
+  workflow_dispatch:        # botón "Run workflow" para lanzarla a mano
+  push:
+    branches: [main]
+    paths:
+      - generar.py
+      - .github/workflows/actualizar.yml
+
+permissions:
+  contents: write
+
+concurrency:
+  group: actualizar
+  cancel-in-progress: false
+
+jobs:
+  generar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Generar la lista desde Wikidata
+        run: python generar.py
+      - name: Guardar la lista nueva
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add datos/
+          if git diff --cached --quiet; then
+            echo "Sin cambios"
+          else
+            git commit -m "Lista de artistas actualizada ($(date -u +%Y-%m-%d))"
+            git pull --rebase
+            git push
+          fi
