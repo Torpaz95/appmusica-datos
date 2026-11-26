@@ -37,11 +37,54 @@ SALIDA = os.path.join(os.path.dirname(os.path.abspath(__file__)), "datos")
 LOTE = 400  # artistas por consulta de detalles
 CABECERA = ["id", "tipo", "fama", "nombre", "alias", "anio", "pais", "papel"]
 
-# Papel principal que muestra la app («Cantante», «Guitarrista»...), por orden de prioridad.
-# Debe coincidir con PERSON_ROLES y GROUP_ROLES de la app (WikidataRepository.kt).
-PAPELES_PERSONA = ["Q177220", "Q488205", "Q2252262", "Q130857", "Q158852", "Q36834", "Q486748",
-                   "Q855091", "Q584301", "Q386854", "Q183945", "Q753110", "Q806349", "Q639669"]
+# Papel principal que muestra la app («Cantante», «Guitarrista»...). Debe coincidir con
+# PERSON_ROLES y GROUP_ROLES de la app (WikidataRepository.kt).
+# 1) Se toma la primera profesión musical que nombra la descripción («guitarrista mexicano…»
+#    → Guitarrista), porque es la que presenta al artista.
+# 2) Si la descripción no nombra ninguna de estas, se usa la primera de PAPELES_PERSONA que
+#    tenga entre sus profesiones de Wikidata.
+PAPELES_DESCRIPCION = [
+    ("Q488205", "cantautor cantautora singer-songwriter"),
+    ("Q177220", "cantante cantaor cantaora singer vocalista vocalist soprano tenor baritono "
+                "baritone mezzosoprano mezzo-soprano contralto"),
+    ("Q2252262", "rapero rapera rapper trapero trapera"),
+    ("Q130857", "dj disc-jockey disc_jockey deejay pinchadiscos"),
+    ("Q158852", "director_de_orquesta directora_de_orquesta conductor"),
+    ("Q753110", "compositor_de_canciones compositora_de_canciones songwriter"),
+    ("Q36834", "compositor compositora composer"),
+    ("Q486748", "pianista pianist"),
+    ("Q855091", "guitarrista guitarist"),
+    ("Q584301", "bajista bassist"),
+    ("Q386854", "baterista drummer"),
+    ("Q1259917", "violinista violinist"),
+    ("Q13219637", "violonchelista chelista cellist"),
+    ("Q12800682", "saxofonista saxophonist"),
+    ("Q12377274", "trompetista trumpeter"),
+    ("Q765778", "organista organist"),
+    ("Q183945", "productor_musical productora_musical productor_discografico "
+                "productora_discografica record_producer music_producer"),
+    ("Q806349", "lider_de_banda bandleader"),
+    ("Q639669", "musico musica musician multiinstrumentista multi-instrumentalist "
+                "instrumentista instrumentalist"),
+]
+_PALABRA_PAPEL = {}
+for _codigo, _palabras in PAPELES_DESCRIPCION:
+    for _p in _palabras.split():
+        _PALABRA_PAPEL[_p.replace("_", " ")] = _codigo
+_RE_PAPEL = re.compile(r"(?<![a-z0-9])(" + "|".join(
+    re.escape(p).replace(r"\ ", r"\s+") for p in sorted(_PALABRA_PAPEL, key=len, reverse=True)
+) + r")(?![a-z0-9])")
+PAPELES_PERSONA = [c for c, _ in PAPELES_DESCRIPCION]
 PAPELES_GRUPO = ["Q9212979"]
+
+
+def papel_por_descripcion(desc):
+    if not desc:
+        return None
+    m = _RE_PAPEL.search(sin_tildes(desc))
+    return _PALABRA_PAPEL.get(re.sub(r"\s+", " ", m.group(1))) if m else None
+
+
 MUJER = {"Q6581072", "Q1052281"}
 
 MUSICO = "Q639669"   # músico
@@ -405,7 +448,8 @@ def main():
                 motivos["persona sin descripción" if not desc else "descripción no musical"] += 1
                 continue
             tipo = "f" if e["ocup"] & MUJER else "p"
-            papel = next((r for r in PAPELES_PERSONA if r in e["ocup"]), "")
+            papel = (papel_por_descripcion(e["desc"].get("es")) or papel_por_descripcion(e["desc"].get("en"))
+                     or next((r for r in PAPELES_PERSONA if r in e["ocup"]), ""))
         else:
             if not (e["tipos"] & grupo_set):
                 motivos["ya no figura como grupo musical"] += 1
