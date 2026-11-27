@@ -37,6 +37,7 @@ jobs:
             echo "Sin cambios"
           else
             git commit -m "Lista de artistas actualizada ($(date -u +%Y-%m-%d))"
-            git pull --rebase
+            # Si mientras tanto se publicó otra lista, manda la recién generada (es la más nueva).
+            git pull --rebase -X theirs
             git push
           fi
