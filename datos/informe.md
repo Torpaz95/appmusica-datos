@@ -1,15 +1,15 @@
-# Informe de calidad — 2026-11-27 00:50 UTC
+# Informe de calidad — 2026-11-27 07:53 UTC
 
-- Artistas en la lista: **323.352** (234.772 personas, 88.580 grupos)
+- Artistas en la lista: **323.356** (234.776 personas, 88.580 grupos)
 - Tamaño del archivo: **6,6 MB**
-- Sin año: 48.230 (14.9 %)
-- Sin país: 31.191 (9.6 %)
-- Tiempo de generación: 104 min
+- Sin año: 48.232 (14.9 %)
+- Sin país: 31.188 (9.6 %)
+- Tiempo de generación: 23 min
 
 ## Descartados
 
-- descripción no musical: 42.027
-- persona sin descripción: 36.279
+- descripción no musical: 42.033
+- persona sin descripción: 36.281
 - sin nombre en español, inglés ni multilingüe: 21.463
 - sin artículo en Wikipedia: 8.258
 
